@@ -1,53 +1,38 @@
 ## How to run
 
-1. Start Redis (broker + result backend):
+1. Build images
 
 ```bash
-docker run -p 6379:6379 redis:alpine
+docker compose build
 ```
 
-2. Install deps:
+2. Start Redis (broker + backend) and the Celery worker
 
 ```bash
-# POSIX:
-cd beta_worker
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-
-# Windows (PowerShell):
-cd beta_worker
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+docker compose up -d redis worker
 ```
 
-3. Start Celery worker with priority queue (and optional DLQ):
+3. Enqueue demo jobs
 
 ```bash
-# POSIX (prefork by default):
-celery -A celery_app.celery worker -l INFO -Q beta,beta.dlq
-
-# Windows (use solo pool):
-celery -A celery_app.celery worker -l INFO -P solo -Q beta,beta.dlq
+docker compose --profile demo up producer
 ```
 
-4. Enqueue demo jobs:
-
-```bash
-python -m producer
-```
-
-5. (Optional) Check tasks and DLQ:
+4. (Optional) Check tasks and DLQ
 
 ```bash
 # List registered tasks:
-celery -A celery_app.celery inspect registered
+docker compose exec worker celery -A celery_app.celery inspect registered
 
 # View DLQ log (only if both beta and stable fail):
-# POSIX:
-tail -n +1 dlq.log || true
-# Windows:
-type dlq.log
+docker compose exec worker sh -lc 'tail -n +1 /data/dlq.log || true'
 ```
 
-The worker consumes from the `beta` queue (priority is best-effort on Redis) and falls back to the stable API after retries for transient errors or immediately on fatal errors. Permanently failed items are recorded in `dlq.log` and also sent to the `beta.dlq` queue.
+5. (Optional) Tweak settings
+   Edit `docker-compose.yml` env vars (e.g., `MAX_RETRIES`, `BASE_BACKOFF_SECONDS`, Redis URLs).
+
+6. (Optional) to run the tests:
+
+```bash
+docker compose run --rm tests
+```
